@@ -1,0 +1,78 @@
+
+import subprocess
+import sys
+import os
+
+# --- Step 0: Ensure required packages are installed ---
+required_packages = ["pandas", "scikit-learn"]
+for pkg in required_packages:
+    try:
+        __import__(pkg)
+    except ImportError:
+        print(f"{pkg} not found. Installing...")
+        subprocess.check_call([sys.executable, "-m", "pip", "install", pkg])
+
+# --- Step 1: Import packages ---
+import pandas as pd
+from sklearn.preprocessing import MinMaxScaler
+
+# --- Step 2: Load dataset with robust separator and fixed column count ---
+train_file = "C:/Datasets/NSL-KDD/KDDTrain+.txt"
+test_file  = "C:/Datasets/NSL-KDD/KDDTest+.txt"
+
+# Use raw string for separator to avoid SyntaxWarning
+# Take only first 42 columns in case train file has extra
+train_data = pd.read_csv(train_file, header=None, sep=r"\s+", engine="python").iloc[:, :42]
+test_data  = pd.read_csv(test_file,  header=None, sep=r"\s+", engine="python").iloc[:, :42]
+
+print("Train shape:", train_data.shape)
+print("Test shape:", test_data.shape)
+
+# --- Step 3: Column names ---
+columns = [
+    "duration","protocol_type","service","flag","src_bytes","dst_bytes",
+    "land","wrong_fragment","urgent","hot","num_failed_logins","logged_in",
+    "num_compromised","root_shell","su_attempted","num_root","num_file_creations",
+    "num_shells","num_access_files","num_outbound_cmds","is_host_login",
+    "is_guest_login","count","srv_count","serror_rate","srv_serror_rate",
+    "rerror_rate","srv_rerror_rate","same_srv_rate","diff_srv_rate",
+    "srv_diff_host_rate","dst_host_count","dst_host_srv_count",
+    "dst_host_same_srv_rate","dst_host_diff_srv_rate","dst_host_same_src_port_rate",
+    "dst_host_srv_diff_host_rate","dst_host_serror_rate","dst_host_srv_serror_rate",
+    "dst_host_rerror_rate","dst_host_srv_rerror_rate","label"
+]
+train_data.columns = columns
+test_data.columns  = columns
+
+# --- Step 4: One-hot encode categorical features ---
+categorical_cols = ["protocol_type", "service", "flag"]
+train_data = pd.get_dummies(train_data, columns=categorical_cols)
+test_data  = pd.get_dummies(test_data, columns=categorical_cols)
+
+# Align train/test columns
+for col in set(train_data.columns) - set(test_data.columns):
+    test_data[col] = 0
+for col in set(test_data.columns) - set(train_data.columns):
+    train_data[col] = 0
+train_data = train_data.sort_index(axis=1)
+test_data  = test_data.sort_index(axis=1)
+
+# --- Step 5: Separate features and labels ---
+X_train = train_data.drop("label", axis=1)
+y_train = train_data["label"].apply(lambda x: 0 if x=="normal" else 1)
+X_test  = test_data.drop("label", axis=1)
+y_test  = test_data["label"].apply(lambda x: 0 if x=="normal" else 1)
+
+# --- Step 6: Normalize features ---
+scaler = MinMaxScaler()
+X_train_scaled = scaler.fit_transform(X_train)
+X_test_scaled  = scaler.transform(X_test)
+
+# --- Step 7: Save CSV files ---
+output_folder = os.getcwd()  # current folder
+pd.DataFrame(X_train_scaled, columns=X_train.columns).to_csv(os.path.join(output_folder,"train_features.csv"), index=False)
+pd.DataFrame(y_train, columns=["label"]).to_csv(os.path.join(output_folder,"train_labels.csv"), index=False)
+pd.DataFrame(X_test_scaled, columns=X_test.columns).to_csv(os.path.join(output_folder,"test_features.csv"), index=False)
+pd.DataFrame(y_test, columns=["label"]).to_csv(os.path.join(output_folder,"test_labels.csv"), index=False)
+
+print(f"✅ Preprocessing complete! CSV files saved in {output_folder}")
